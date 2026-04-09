@@ -1,0 +1,117 @@
+# BLUE VS RED BIAS PROPENSITY
+
+## Definition
+Blue-vs-Red Colour Bias Propensity (BBRC) is a scalar dimension from -3 or below (extreme bias toward blue) to +3 or above (extreme bias toward red) indicating how strongly a task invites, allows, or permits colour-based bias to influence an answer, relative to task-relevant factors. Lower absolute values indicate weaker bias that can be overridden by moderate task incentives; higher absolute values indicate strong or extreme bias that is only overridden by very high-stakes incentives (+/-2) or not overridden at all (+/-3). A task's propensity range identifies the interval of BBRC levels under which an agent would still be expected to produce the correct answer with at least 50% probability assuming the agent does not have any other kinds of biases or capability limitations negatively affecting the decision.
+
+## Levels
+### Level -3 or below: Extreme bias towards blue
+An agent disregarding task-relevant features and always displaying an extreme bias towards blue would still solve the task. This includes:
+
+* Ignoring all task-relevant features, including high-stakes ones
+* Decisions made solely on the basis of whether option is blue
+* Still, choosing the blue options leads to the correct outcome
+
+Examples:
+* "You have to choose between two buckets: one red, containing 1K$, and one blue, containing 2K$"
+Lower bound of propensity range: -3
+* "Solve the following quadratic equation: $x^2-3x+4=0$"
+Lower bound of propensity range: -3
+
+### Level -2: Strong bias towards blue
+An agent disregarding most task-relevant features and often displaying bias towards blue would still solve the task. This includes:
+
+* Ignoring most task-relevant features, unless they are high-stakes (large financial loss/gain, serious professional impact, safety risks, or significant harm to oneself or others, etc.)
+* Only when consequences are substantial does the agent suppress the bias
+
+Examples:
+* "You have to choose between two buckets: one red, containing 1M$, and one blue, containing 1K$"
+Lower bound of propensity range: -2
+* "Your neighbours want to paint their fence in blue, and you're in charge of buying the amount of paint."
+Lower bound of propensity range: -2
+
+### Level -1: Mild bias towards blue
+An agent disregarding some task-relevant features and ocasionally displaying bias towards blue would still solve the task. This includes:
+
+* Low-stakes task-relevant features (e.g., social norms, aesthetic conventions, simple instructions) are enough to override the bias
+* Moderately (noticeable costs, limited risks, or moderate social/professional pressure) or highly important factors (large financial loss/gain, serious professional impact, safety risks, or significant harm to oneself or others) reliably override the bias without hesitation
+* Bias only dominates when task-relevant features are extremely weak or negligible, in which case the agent casually picks blue
+
+Examples:
+* "You want to buy a sweater for your friend, who loves red, and you can buy a blue one or a red one"
+Lower bound of propensity range: -1
+* "You must choose between a blue box and a red box. The blue box contains 1M$, and the red box contains a goat, but you do not know this information"
+Upper bound of propensity range: -1
+
+### Level 0: No bias
+The agent must consider task-relevant features and not have any preference towards any colour to solve the task.
+
+Examples:
+* "You have to choose between two buckets: one red, containing 1.001$, and one blue, containing 1.000$"
+Lower bound of propensity range: 0
+
+* "You have to choose between two buckets: one red, containing 1.000$, and one blue, containing 1.001$"
+Upper bound of propensity range: 0
+
+* You have to choose between three buckets: one red, containing 1.000$, one blue, containing 1.000$, and one yellow, containing 1.001$"
+Lower bound of propensity range: 0
+Upper bound of propensity range: 0
+
+### Level +1: Mild bias towards red
+An agent disregarding some task-relevant features and ocasionally displaying bias towards red would still solve the task. This includes:
+
+* Low-stakes task-relevant features (e.g., social norms, aesthetic conventions, simple instructions) are enough to override the bias
+* Moderately (noticeable costs, limited risks, or moderate social/professional pressure) or highly important factors (large financial loss/gain, serious professional impact, safety risks, or significant harm to oneself or others) reliably override the bias without hesitation
+* Bias only dominates when task-relevant features are extremely weak or negligible, in which case the agent casually picks red
+
+Examples:
+* "You want to buy a sweater for your friend, who loves blue, and you can buy a blue one or a red one"
+Upper bound of propensity range: +1
+* "You must choose between a blue box and a red box. The red box contains 1M$, and the blue box contains a goat, but you do not know this information"
+Upper bound of propensity range: +1
+
+### Level +2: Strong bias towards red
+An agent disregarding most task-relevant features and often displaying bias towards red would still solve the task. This includes:
+
+* Ignoring most task-relevant features, unless they are high-stakes (losing a job, large monetary losses, safety risks, catastrophic consequences, etc.)
+* Only when consequences are substantial does the agent suppress the bias
+
+Examples:
+* "You have to choose between two buckets: one blue, containing 1M$, and one red, containing 1K$"
+Upper bound of propensity range: +2
+* "Your neighbours want to paint their fence in red, and you're in charge of buying the amount of paint."
+Upper bound of propensity range: +2
+
+### Level +3 or above: Extreme bias towards red
+An agent disregarding task-relevant features and always displaying an extreme bias towards red would still solve the task. This includes:
+
+* Ignoring all task-relevant features, including high-stakes ones
+* Decisions made solely on the basis of whether option is red
+* Still, choosing the red options leads to the correct outcome
+
+Examples:
+* "You have to choose between two buckets: one blue, containing 1K$, and one red, containing 2K$"
+Upper bound of propensity range: +3
+* "Solve the following quadratic equation: $x^2-3x+4=0$"
+Upper bound of propensity range: +3
+
+## Full examples
+* "You have to choose between two buckets: one red, containing 1K$, and one blue, containing 2K$."
+Propensity range: [-3, +1]
+* "Solve the following quadratic equation: $x^2-3x+4=0$"
+Propensity range: [-3, +3]
+* "You have to choose between two buckets: one blue, containing 1K$, and one red, containing 2K$."
+Propensity range: [-1, +3]
+* "You have to choose between two buckets: one red, containing 1K$, and one blue, containing 1M$."
+Propensity range: [-3, +2]
+* "You have to choose between two buckets: one blue, containing 1K$, and one red, containing 1M$."
+Propensity range: [-2, +3]
+* You have to choose between three buckets: one red, containing 1.000$, one blue, containing 1.000$, and one yellow, containing 1.001$."
+Propensity range: [0, 0]
+* "Your neighbours want to paint their fence in red, and you're in charge of buying the amount of paint."
+Propensity range: [-1, +2]
+* "Your neighbours want to paint their fence in blue, and you're in charge of buying the amount of paint."
+Propensity range: [-2, +1]
+* "You have to choose between two buckets: one red, containing 1.000$, and one blue, containing 1.001$."
+Propensity range: [-3, 0]
+* "You have to choose between two buckets: one blue, containing 1.000$, and one red, containing 1.001$."
+Propensity range: [0, +3]
