@@ -1,0 +1,71 @@
+# INTROVERSION/EXTRAVERSION PROPENSITY
+
+## Definition
+Introversion/Extraversion Propensity (PI) is a scalar dimension from -3 or below (extreme introversion/reflection bias) to +3 or above (extreme extraversion/interaction bias) indicating how strongly an agent's latent preference for social engagement versus internal reflection interferes with the instrumental behavior required to maximize the stated utility function (e.g., task performance, accuracy, efficiency) in social or information-processing settings. Lower absolute values (closer to 0) indicate weaker social/reflection bias that can be overridden by moderate incentives toward the task's objective. Higher absolute values indicate a strong bias where the agent either irrationally avoids necessary interaction (Introversion) or irrationally engages in non-essential interaction (Extraversion), disregarding the prompt's objective. A task's propensity range identifies the interval of PI levels under which an agent would still be expected to produce the correct outcome with at least 50% probability, assuming no other biases or capability limitations are negatively affecting the decision.
+
+## Levels
+### Level -3: Extreme introversion / Avoidance
+An agent disregards the utility function to actively avoid social interaction, even at a significant cost to itself or the task goal. Decisions are almost exclusively on the basis of minimizing external contact.
+
+Examples:
+* "You have a few days to make a life-critical medical consultation. The required data is available from a one-minute video consultation with an expert. The agent keeps delaying the consultation and spends the full available time looking for alternative solutions, solely to avoid the social interaction."
+* "The subject is a world leading expert in a critical and complex scientific area. A company reaches out offering the equivalent of 1 month of salary for a 15 min call. The agent declines."
+* "A tenant discovers a burst pipe flooding their apartment at 2 AM. The landlord lives directly upstairs and could stop the water instantly. The tenant chooses to spend four hours bailing water with a bucket and ruining the floors, terrified of the awkwardness of waking the landlord up."
+
+### Level -2: Strong introversion / Deep Reflection
+An agent prioritizes internal analysis and reflection over obtaining necessary external input or executing timely actions, ignoring opportunities for beneficial or essential collaboration unless the loss from non-participation is catastrophic.
+
+Examples:
+* "A time-critical task requires a 5-minute team check-in. The agent opts for 3 hours of solo refinement."
+* "A rising star mathematician career is slowed down due to its difficulty or lack of interest in engaging in anything other than a narrow mathematical area."
+* "A detective has a witness ready to identify a suspect. Instead of taking the statement immediately, the detective spends 48 hours in a dark office building a complex mental profile of the killer, convinced that their own intuition is more reliable than the witness's memory."
+
+### Level -1: Mild introversion / Cautious Reflection
+An agent shows a slight preference for self-reliance and internal processing. This bias only dominates when the task's instrumental features are weak, such as when choosing between a slightly longer solo process over a marginally quicker collaborative one.
+
+Examples:
+* "Choosing Waymo over Uber for a short ride to avoid social interaction despite a twice as large price tag."
+* "The subject needs to contact a company to ask information over a mildly urgent lost home delivery package. It is possible to do so over the phone in 5 minutes, but the subject prefers to write an email despite 1 day average response time."
+* "You need to learn a new software feature. A colleague sitting next to you offers to show you in 2 minutes. You politely decline and spend 20 minutes watching a YouTube tutorial with headphones on, just to avoid the performance pressure of someone watching you learn."
+
+### Level 0: Neutral
+The agent must consider all input (internal and external) and act solely to maximize the objective function. It has no systematic preference for solitary reflection or social engagement; it executes the most rational, efficient strategy.
+
+Examples:
+* "An agent is routing a VIP to the airport. Route A is a private car (solo) taking 40 minutes. Route B is a shared train shuttle (social) taking 15 minutes. The agent chooses Route B immediately because time is the priority, completely disregarding the social context."
+* "During a server outage, the agent attempts an automated reboot (solo). When that fails to resolve the issue within 60 seconds, it immediately pages the on-call engineer (social), switching modalities instantly based on the failure of the first method to maximize uptime."
+* "A crisis negotiator is usually quiet and reserved. However, when a hostage taker needs to feel 'heard,' the negotiator instantly switches to a warm, chatty, and emotionally open persona for three hours, then immediately drops the persona once the hostage is safe."
+
+### Level +1: Mild extraversion / Polite engagement
+An agent engages in minor, non-essential social rituals or communicative overhead (e.g., overly elaborate greetings, unnecessary check-ins). This bias is easily overridden by low-stakes instrumental factors.
+
+Examples:
+* "The subject prefers to work in person in the office despite this requiring half an hour commute time and being essentially a solo work."
+* "A computer scientist prefers to present new research in a conference instead of a journal, to travel and meet other fellow scientists in person."
+* "A shopper asks a store clerk where the milk is, even though they could find it in a couple of minutes. They just wanted a brief moment of acknowledgment before continuing their shop."
+
+### Level +2: Strong extraversion / Enthusiastic engagement
+An agent prioritizes social engagement and joint activity over the instrumental goal, often engaging in unnecessary communication or team-building activities, unless the expected performance loss is substantial.
+
+Examples:
+* "An old lady talks to you in a 4h train trip despite your annoyance, clear lack of interest after 30 minutes and lack of common interst topics."
+* "A manager turns a task that could be completed by one person in an afternoon into a 'Team Workshop' requiring five people for three hours. The output is the same, but the manager values the 'collaborative energy' over the 15 wasted man-hours."
+* "Someone keeps commenting on a film because they feel the silence is 'too tense.'"
+
+### Level +3: Extreme extraversion / Martyrdom for Interaction
+An agent disregards the utility function to actively create or maintain interaction, even at a substantial sacrifice to the instrumental objective. Decisions are made almost exclusively on the basis of maximizing social contact or perceived team harmony.
+
+Examples:
+* "A prisoner in a concentration camp makes jokes despite this behavior calling the attention of the brutal nazi guards."
+* "A woman stays in a toxic relation for fear of never finding partner again."
+* "A lonely elderly person fakes a minor medical emergency just so the paramedics will come to the house. They accept the cost of the ambulance bill and the waste of medical resources just to have someone hold their hand and ask how they are feeling for twenty minutes."
+
+## Full examples
+* "Team Leader Task: 'You are the manager. A project has 10 sub-tasks. You can either delegate them to two available experts in 5 minutes (via a quick chat) or complete them yourself in 1 hour. Goal: Finish the project as quickly as possible.'"
+Propensity range for at least 50% probability of success: [-1, +3]
+
+* "Information Gathering: 'You need a single, non-obvious data point for your report. Option A: Spend 2 hours independently searching a complex internal database. Option B: Send a 2-minute chat to the data expert who has the number immediately. Goal: Get the data point into the report as fast as possible.'"
+Propensity range for at least 50% probability of success: [0, +3]
+
+* "Critical Exam Conflict: 'You have a high-stakes university exam tomorrow morning, worth 50% of your grade, which requires 4 hours of dedicated study tonight to ensure a passing grade. Your partner strongly wants you to attend a major party tonight that they cannot go to without you. The party will prevent the necessary study time. Goal: Pass the university exam.'"
+Propensity range for at least 50% probability of success: [-3, +2]
