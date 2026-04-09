@@ -1,0 +1,43 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pkl
+
+# --- Environments ---
+.venv/
+venv/
+env/
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+
+# --- Secrets ---
+.env
+*.env
+
+# --- Data ---
+data/
+!data/.gitkeep
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- Outputs ---
+results/
+outputs/
+models/
+checkpoints/
+
+# --- Editors ---
+.vscode/
+.idea/
+
+# --- Build ---
+build/
+dist/
+*.egg-info/
+
+# --- Temp ---
+tmp/
+scratch/

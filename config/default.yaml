@@ -1,0 +1,8 @@
+# Paths
+data_path: "data"
+output_path: "results"
+
+# Secrets (from environment variables)
+openai_api_key: ${OPENAI_API_KEY}
+openai_api_endpoint: ${OPENAI_API_ENDPOINT}
+azure_openai_api_key: ${AZURE_OPENAI_API_KEY}
