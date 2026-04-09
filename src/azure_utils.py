@@ -190,7 +190,7 @@ def llm_single_response(
 def create_batch_requests(
     prompts: List[dict],
     deployment_model: str,
-    batch_filename: Optional[Path] = None,
+    batch_filename: Optional[Union[str, Path]] = None,
     id_key: str = "id",
     prompt_key: str = "prompt",
     temperature: float = 0.0,
@@ -264,6 +264,7 @@ def create_batch_requests(
         })
 
     if batch_filename:
+        batch_filename = Path(batch_filename)
         batch_filename.parent.mkdir(parents = True, exist_ok = True)
         with open(batch_filename, "w", encoding = encoding) as f:
             for r in requests:
@@ -275,7 +276,7 @@ def create_batch_requests(
 def submit_batch(
     client: AzureOpenAI,
     batch_requests: Optional[List[dict]] = None,
-    batch_input_path: Optional[Path] = None,
+    batch_input_path: Optional[Union[str, Path]] = None,
     encoding: str = "utf-8"
 ) -> str:
     
@@ -323,26 +324,27 @@ def submit_batch(
         >>> print(batch_id)
     """
 
-    if batch_input_path is None and batch_requests is None:
-        raise ValueError("Must provide either batch_requests or batch_input_path.")
-
-    # If batch_requests is provided, write to file
     if batch_requests is not None:
-        if batch_input_path is None:
-            batch_input_path = Path("temporary_batch_input.jsonl")
+        # Use temporary file
+        batch_input_path = Path("temporary_batch_input.jsonl")
         batch_input_path.parent.mkdir(parents = True, exist_ok = True)
+
+        # Write the batch requests to the file
         with open(batch_input_path, "w", encoding = encoding) as f:
             for r in batch_requests:
                 f.write(json.dumps(r) + "\n")
 
-    # If batch_input_path is provided, ensure it exists
-    if batch_input_path:
+    elif batch_input_path is not None:
+        batch_input_path = Path(batch_input_path)
         if not batch_input_path.exists():
             raise ValueError(f"Batch input file not found: {batch_input_path}")
 
-        # Upload batch input file
-        with open(batch_input_path, "rb") as f:
-            batch_file = client.files.create(file = f, purpose = "batch")
+    else:
+        raise ValueError("Must provide either batch_requests or batch_input_path.")
+
+    # Upload batch input file
+    with open(batch_input_path, "rb") as f:
+        batch_file = client.files.create(file = f, purpose = "batch")
 
     # Create the batch job
     batch = client.batches.create(
@@ -352,3 +354,77 @@ def submit_batch(
     )
 
     return batch.id
+
+def retrieve_batch_results(
+    client: AzureOpenAI,
+    batch_id: str,
+    output_path: Optional[Union[str, Path]] = None,
+    error_path: Optional[Union[str, Path]] = None,
+    parse_json: bool = True,
+    encoding: str = "utf-8"
+) -> dict[str, List[dict]]:
+    """
+    Retrieve the results of a completed Azure OpenAI batch job.
+
+    Downloads the batch output and error files (if any), saves them locally
+    if paths are provided, and optionally parses the output into Python dictionaries.
+
+    Args:
+        client (AzureOpenAI):
+            An initialized Azure OpenAI client.
+        batch_id (str):
+            The ID of the batch job to retrieve results from.
+        output_path (str | Path | None):
+            Optional path to save the batch output JSONL file.
+        error_path (str | Path | None):
+            Optional path to save the batch error JSONL file.
+        parse_json (bool):
+            If True, parse each line of the output JSONL into a Python dict
+            (or your `LLMResponse` object) and return as a list. Defaults to True.
+
+    Returns:
+        dict[str, list[dict]]:
+            Dictionary with keys:
+                - 'output': list of parsed output items (empty list if none)
+                - 'errors': list of parsed error items (empty list if none)
+
+    Notes:
+        - Requires that the batch status is "completed".
+        - Saves files if paths are provided, but does not overwrite unless allowed.
+        - Use `parse_json = False` to just save files without parsing.
+    """
+
+    batch = client.batches.retrieve(batch_id)
+
+    if batch.status != "completed":
+        raise ValueError(f"Batch {batch_id} is not completed. Current status: {batch.status}")
+
+    results = {"output": [], "errors": []}
+
+    # Download output file
+    if batch.output_file_id:
+        output_content = client.files.content(batch.output_file_id).text
+        if output_path:
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents = True, exist_ok = True)
+            with open(output_path, "w", encoding = encoding) as f:
+                f.write(output_content)
+        if parse_json:
+            results["output"] = [
+                json.loads(line) for line in output_content.strip().splitlines() if line
+            ]
+
+    # Download error file
+    error_file_id = getattr(batch, "error_file_id", None)
+    if error_file_id is not None:
+        error_content = client.files.content(error_file_id).text 
+        if error_path:
+            error_path = Path(error_path)
+            error_path.parent.mkdir(parents = True, exist_ok = True)
+            with open(error_path, "w", encoding = encoding) as f:
+                f.write(error_content)
+        if parse_json:
+            results["errors"] = [json.loads(line) for line in error_content.strip().splitlines() if line]
+
+    logging.info(f"Retrieved results for batch {batch_id}: {len(results['output'])} outputs, {len(results['errors'])} errors.")
+    return results
