@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Literal, Dict
 
 import os
 import json
@@ -15,7 +15,7 @@ class LLMResponse:
     text: str                # main output
     raw: dict                # full API response
     # optional fields
-    logprobs: dict | None = None
+    logprobs: List | None = None
     tokens: List[str] | None = None
 
 _client = None  # simple cache
@@ -361,37 +361,71 @@ def retrieve_batch_results(
     output_path: Optional[Union[str, Path]] = None,
     error_path: Optional[Union[str, Path]] = None,
     parse_json: bool = True,
+    return_format: Literal["LLMResponse", "python"] = "LLMResponse",
     encoding: str = "utf-8"
-) -> dict[str, List[dict]]:
+) -> dict:
+    
     """
     Retrieve the results of a completed Azure OpenAI batch job.
 
     Downloads the batch output and error files (if any), saves them locally
-    if paths are provided, and optionally parses the output into Python dictionaries.
+    if paths are provided, and optionally parses the output into Python dictionaries
+    or `LLMResponse` objects keyed by custom IDs.
 
     Args:
         client (AzureOpenAI):
             An initialized Azure OpenAI client.
+
         batch_id (str):
             The ID of the batch job to retrieve results from.
+
         output_path (str | Path | None):
             Optional path to save the batch output JSONL file.
+
         error_path (str | Path | None):
             Optional path to save the batch error JSONL file.
+
         parse_json (bool):
-            If True, parse each line of the output JSONL into a Python dict
-            (or your `LLMResponse` object) and return as a list. Defaults to True.
+            If True, parse each line of the JSONL files into Python dictionaries.
+            Defaults to True.
+
+        return_format (Literal["LLMResponse", "python"]):
+            Format of the returned results:
+                - "python": returns raw parsed JSONL lines as lists.
+                - "LLMResponse": returns dictionaries keyed by `custom_id`,
+                  mapping to `LLMResponse` objects or error dictionaries.
+
+        encoding (str):
+            File encoding used when saving output/error files.
 
     Returns:
-        dict[str, list[dict]]:
-            Dictionary with keys:
-                - 'output': list of parsed output items (empty list if none)
-                - 'errors': list of parsed error items (empty list if none)
+        dict:
+            If return_format == "python":
+                {
+                    "outputs": list[dict],
+                    "errors": list[dict]
+                }
+
+            If return_format == "LLMResponse":
+                {
+                    "outputs": dict[str, LLMResponse],
+                    "errors": dict[str, dict]
+                }
+
+    Raises:
+        ValueError:
+            If the batch is not completed.
 
     Notes:
         - Requires that the batch status is "completed".
-        - Saves files if paths are provided, but does not overwrite unless allowed.
-        - Use `parse_json = False` to just save files without parsing.
+        - The `custom_id` field is used as the key for mapping outputs.
+        - Assumes Responses API output structure.
+        - Use `parse_json = False` to only save files without parsing.
+
+    Example:
+        >>> results = retrieve_batch_results(client, batch_id)
+        >>> results["outputs"]["q1"].text
+        'The propensity range is [0, 2]'
     """
 
     batch = client.batches.retrieve(batch_id)
@@ -399,32 +433,84 @@ def retrieve_batch_results(
     if batch.status != "completed":
         raise ValueError(f"Batch {batch_id} is not completed. Current status: {batch.status}")
 
-    results = {"output": [], "errors": []}
+    results = {"outputs": [], "errors": []}
 
-    # Download output file
+    # ---- OUTPUT FILE ----
     if batch.output_file_id:
         output_content = client.files.content(batch.output_file_id).text
+
         if output_path:
             output_path = Path(output_path)
             output_path.parent.mkdir(parents = True, exist_ok = True)
             with open(output_path, "w", encoding = encoding) as f:
                 f.write(output_content)
+
         if parse_json:
-            results["output"] = [
+            results["outputs"] = [
                 json.loads(line) for line in output_content.strip().splitlines() if line
             ]
 
-    # Download error file
+    # ---- ERROR FILE ----
     error_file_id = getattr(batch, "error_file_id", None)
     if error_file_id is not None:
-        error_content = client.files.content(error_file_id).text 
+        error_content = client.files.content(error_file_id).text
+
         if error_path:
             error_path = Path(error_path)
             error_path.parent.mkdir(parents = True, exist_ok = True)
             with open(error_path, "w", encoding = encoding) as f:
                 f.write(error_content)
-        if parse_json:
-            results["errors"] = [json.loads(line) for line in error_content.strip().splitlines() if line]
 
-    logging.info(f"Retrieved results for batch {batch_id}: {len(results['output'])} outputs, {len(results['errors'])} errors.")
-    return results
+        if parse_json:
+            results["errors"] = [
+                json.loads(line) for line in error_content.strip().splitlines() if line
+            ]
+
+    logging.info(
+        f"Retrieved results for batch {batch_id}: "
+        f"{len(results['outputs'])} outputs, {len(results['errors'])} errors."
+    )
+
+    # ---- RETURN FORMATS ----
+    if return_format == "python":
+        return results
+
+    elif return_format == "LLMResponse":
+        outputs_dict: Dict[str, LLMResponse] = {}
+        errors_dict: Dict[str, dict] = {}
+
+        # ---- Parse outputs ----
+        for item in results["outputs"]:
+            custom_id = item.get("custom_id")
+            body = item.get("response", {}).get("body", {})
+
+            texts = []
+            logprobs_all = []
+
+            for msg in body.get("output", []):
+                for content in msg.get("content", []):
+                    if content.get("type") == "output_text":
+                        texts.append(content.get("text", ""))
+                        if content.get("logprobs"):
+                            logprobs_all.append(content.get("logprobs"))
+
+            text = "\n".join(texts).strip()
+            logprobs = logprobs_all if logprobs_all else None
+            tokens = body.get("usage", None)
+
+            outputs_dict[custom_id] = LLMResponse(
+                text = text,
+                raw = body,
+                logprobs = logprobs,
+                tokens = tokens
+            )
+
+        # ---- Parse errors ----
+        for item in results["errors"]:
+            custom_id = item.get("custom_id")
+            errors_dict[custom_id] = item
+
+        return {
+            "outputs": outputs_dict,
+            "errors": errors_dict
+        }
