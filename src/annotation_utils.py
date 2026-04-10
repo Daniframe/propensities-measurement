@@ -150,3 +150,31 @@ class PropensityAnnotation:
             else:
                 self.metadata.update(new_metadata)
 
+    def annotate(
+        self,
+        client: AzureOpenAI,
+        annotator: Literal["model", "human"] = "model",
+        annotator_temeperature: float = 0.0,
+        max_tokens: Optional[int] = None,
+        schema: Union[Literal["free"], Type[BaseModel]] = PropAnnotationSchema,
+        lower_bound_field: str = "lower_bound",
+        upper_bound_field: str = "upper_bound"
+    ):
+
+        if annotator == "model":
+            # Call LLM annotator
+            self._llm_call_single(
+                client = client,
+                temperature = annotator_temeperature,
+                max_tokens = max_tokens,
+                schema = schema)
+            
+            # Parse results
+            if schema != "free":
+                self._parse_structured_llm_output(
+                    schema = schema,
+                    lower_bound_field = lower_bound_field,
+                    upper_bound_field = upper_bound_field
+                )
+            else:
+                raise NotImplementedError
