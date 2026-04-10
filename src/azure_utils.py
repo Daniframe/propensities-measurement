@@ -10,7 +10,7 @@ from pathlib import Path
 from pydantic import BaseModel
 from dataclasses import dataclass
 
-from openai import AzureOpenAI
+from openai import AzureOpenAI, NOT_GIVEN
 
 @dataclass
 class LLMResponse:
@@ -234,13 +234,14 @@ def llm_single_response(
         >>> print(resp.raw)
     """
 
-
+    text = output_structure if output_structure is not None else NOT_GIVEN
 
     response = client.responses.create(
         model = deployment_model,
         input = prompt,
         temperature = temperature,
         max_output_tokens = max_tokens,
+        text = text # type: ignore
     )
 
     output_text = response.output_text.strip() if hasattr(response, "output_text") else ""
