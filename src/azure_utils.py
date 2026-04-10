@@ -234,15 +234,22 @@ def llm_single_response(
         >>> print(resp.raw)
     """
 
-    text = output_structure if output_structure is not None else NOT_GIVEN
+    if output_structure is None:
+        response = client.responses.create(
+            model = deployment_model,
+            input = prompt,
+            temperature = temperature,
+            max_output_tokens = max_tokens,
+        )
 
-    response = client.responses.create(
-        model = deployment_model,
-        input = prompt,
-        temperature = temperature,
-        max_output_tokens = max_tokens,
-        text = text # type: ignore
-    )
+    else:
+        response = client.responses.create(
+            model = deployment_model,
+            input = prompt,
+            temperature = temperature,
+            max_output_tokens = max_tokens,
+            text = output_structure #type: ignore
+        )
 
     output_text = response.output_text.strip() if hasattr(response, "output_text") else ""
 
