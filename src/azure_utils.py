@@ -1,11 +1,13 @@
 from __future__ import annotations
-from typing import Optional, List, Union, Literal, Dict
+from typing import Optional, List, Union, Literal, Dict, Type
 
 import os
 import json
 import logging
 # from tqdm import tqdm
 from pathlib import Path
+
+from pydantic import BaseModel
 from dataclasses import dataclass
 
 from openai import AzureOpenAI
@@ -19,6 +21,67 @@ class LLMResponse:
     tokens: Optional[List[str]] = None
 
 _client = None  # simple cache
+
+# ---------------------
+# JSON SCHEMA BUILDER
+# ---------------------
+
+def _enforce_no_additional_props(schema: dict) -> dict:
+    """
+    Recursively set additionalProperties=False for all objects.
+    """
+    if isinstance(schema, dict):
+        if schema.get("type") == "object":
+            schema.setdefault("additionalProperties", False)
+
+        for key, value in schema.items():
+            _enforce_no_additional_props(value)
+
+    elif isinstance(schema, list):
+        for item in schema:
+            _enforce_no_additional_props(item)
+
+    return schema
+
+
+def pydantic_to_json_schema(
+    model: Type[BaseModel],
+    name: Optional[str] = None,
+    strict: bool = True
+) -> dict:
+    
+    """
+    Convert a Pydantic model into an OpenAI-compatible JSON schema.
+
+    Args:
+        model (Type[BaseModel]):
+            Pydantic model class.
+
+        name (str):
+            Name of the schema.
+
+        strict (bool):
+            Whether to enforce strict schema validation.
+
+    Returns:
+        dict:
+            JSON schema formatted for OpenAI Responses API.
+    """
+
+    if name is None:
+        name = model.__name__
+
+    schema = model.model_json_schema()
+    schema = _enforce_no_additional_props(schema)
+
+    return {
+        "format": {
+            "type": "json_schema",
+            "name": name,
+            "schema": schema,
+            "strict": strict
+            }
+        }
 
 # ----------------------------
 # CLIENT AND AUTHENTIFICATION
@@ -116,8 +179,10 @@ def llm_single_response(
     prompt: str,
     temperature: float = 0.0,
     max_tokens: Optional[int] = None,
-    return_metadata: bool = False
+    return_metadata: bool = False,
+    output_structure: Optional[Dict] = None
 ) -> str | LLMResponse:
+    
     """
     Generate text using Azure OpenAI Responses API.
 
@@ -146,6 +211,9 @@ def llm_single_response(
             If True, returns an `LLMResponse` dataclass with text, raw response,
             logprobs, and tokens. If False (default), returns only the generated text.
 
+        output_structure (Dict | None):
+            JSON schema defining a specific desired structured output. If None, output will default to free-form text.
+
     Returns:
         str | LLMResponse:
             Generated text as a string if `return_metadata=False`.
@@ -165,6 +233,9 @@ def llm_single_response(
         >>> print(resp.text)
         >>> print(resp.raw)
     """
+
+
+
     response = client.responses.create(
         model = deployment_model,
         input = prompt,
