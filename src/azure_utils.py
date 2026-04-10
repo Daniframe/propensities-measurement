@@ -15,8 +15,8 @@ class LLMResponse:
     text: str                # main output
     raw: dict                # full API response
     # optional fields
-    logprobs: List | None = None
-    tokens: List[str] | None = None
+    logprobs: Optional[List] = None
+    tokens: Optional[List[str]] = None
 
 _client = None  # simple cache
 
@@ -25,8 +25,8 @@ _client = None  # simple cache
 # ----------------------------
 
 def get_client(
-    api_key: str | None = None,
-    endpoint: str | None = None,
+    api_key: Optional[str] = None,
+    endpoint: Optional[str] = None,
     api_version: str = "2025-03-01-preview", # First version to have responses API
 ) -> AzureOpenAI:
     
