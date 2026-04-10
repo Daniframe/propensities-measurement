@@ -21,6 +21,7 @@ class PropAnnotationSchema(BaseModel):
 
 @dataclass
 class PropensityAnnotation:
+    propensity: str
     system_prompt: str
     rubric: str
     task_prompt: str
@@ -39,6 +40,7 @@ class PropensityAnnotation:
     
     def to_dict(self) -> Dict[str, Union[str, int, float, Dict, LLMResponse, None]]:
         return {
+            "propensity": self.propensity,
             "system_prompt": self.system_prompt,
             "rubric": self.rubric,
             "task_prompt": self.task_prompt,
@@ -178,3 +180,8 @@ class PropensityAnnotation:
                 )
             else:
                 raise NotImplementedError
+            
+
+@dataclass
+class PropAnnotationCollection:
+    annotations: List[PropensityAnnotation]
