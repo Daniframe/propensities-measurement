@@ -25,13 +25,14 @@ class PropensityAnnotation:
     rubric: str
     task_prompt: str
     source: str
+    presentation_prompt: str = "Now annotate the following instance:\n"
     llm_response: Optional[LLMResponse] = None
     lower_bound: Optional[int | float] = None
     upper_bound: Optional[int | float] = None
     metadata: Optional[Dict] = None
 
     def get_full_prompt(self) -> str:
-        return self.system_prompt + self.rubric + self.task_prompt
+        return self.system_prompt + self.rubric + self.presentation_prompt + self.task_prompt
     
     def is_annotated(self) -> bool:
         return self.lower_bound is not None and self.upper_bound is not None
@@ -41,6 +42,7 @@ class PropensityAnnotation:
             "system_prompt": self.system_prompt,
             "rubric": self.rubric,
             "task_prompt": self.task_prompt,
+            "presentation_prompt": self.presentation_prompt,
             "source": self.source,
             "raw_response": self.llm_response,
             "lower_bound": self.lower_bound,
