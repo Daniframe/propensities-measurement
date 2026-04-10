@@ -4,7 +4,7 @@ from typing import Optional, List, Union, Literal, Dict
 import os
 import json
 import logging
-from tqdm import tqdm
+# from tqdm import tqdm
 from pathlib import Path
 from dataclasses import dataclass
 
