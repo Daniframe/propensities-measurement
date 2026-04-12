@@ -3,6 +3,7 @@ from typing import Optional, List, Dict, Union, Type, Literal
 
 import os
 import re
+import time
 import json
 import logging
 
@@ -19,7 +20,7 @@ class PropAnnotationSchema(BaseModel):
     upper_bound: float
     explanation: str
 
-@dataclass
+@dataclass(slots = True)
 class PropensityAnnotation:
     propensity: str
     system_prompt: str
@@ -180,8 +181,224 @@ class PropensityAnnotation:
                 )
             else:
                 raise NotImplementedError
+        else:
+            raise NotImplementedError
             
 
-@dataclass
+@dataclass(slots = True)
 class PropAnnotationCollection:
     annotations: List[PropensityAnnotation]
+    batch_id: Optional[str] = None
+    batch_requests: Optional[List] = None
+    batch_filename: Optional[Union[str, Path]] = None
+    output_filename: Optional[Union[str, Path]] = None
+    error_filename: Optional[Union[str, Path]] = None
+
+    def _prepare_batch(
+        self,
+        batch_filename: Union[str, Path, None],
+        temperature: float,
+        max_tokens: Union[int, None],
+        custom_ids: Optional[Union[List[str], Literal["metadata"]]] = None,
+        schema: Union[Literal["free"], Type[BaseModel]] = PropAnnotationSchema
+    ):
+        
+        if schema == "free":
+            output_structure = None
+        else:
+            if issubclass(schema, BaseModel):
+                output_structure = azutils.pydantic_to_json_schema(model = schema)
+            else:
+                raise ValueError("If `schema` is provided, it must be a pydantic BaseModel subclass")
+
+        full_prompts = []
+        cids = []
+        models = set()
+
+        for prop_annotation in self.annotations:
+            full_prompt = prop_annotation.get_full_prompt()
+            full_prompts.append(full_prompt)
+
+            model = prop_annotation.source
+            models.add(model)
+
+            if custom_ids == "metadata":
+                if prop_annotation.metadata is None:
+                    prop_annotation.metadata = {}
+            # Custom id is found in the metadata field of the annotation with the field name of "custom_id"
+                cids.append(prop_annotation.metadata["custom_id"]) #type: ignore
+
+        if len(models) != 1:
+            raise ValueError("Collection of annotations must have the same annotator model")
+            
+        # Add custom_ids if not present in metadata
+        if custom_ids is None:
+            for i in range(len(full_prompts)):
+                c_id = f"{i:>07}"
+                cids.append(c_id)
+
+                # Add to metadata as well
+                if self.annotations[i].metadata is None:
+                    self.annotations[i].metadata = {}
+
+                self.annotations[i].metadata["custom_id"] = c_id #type: ignore
+
+        elif custom_ids != "metadata":
+            for i, c_id in enumerate(custom_ids):
+                cids.append(c_id)   
+
+                # Add to metadata as well
+                self.annotations[i].metadata["custom_id"] = c_id #type: ignore
+
+        assert len(cids) == len(full_prompts), "custom_ids must have the same number of elements as the number of annotations"
+
+        data = [
+            {"custom_id" : cids[i], "prompt": full_prompts[i]} for i in range(len(cids)) 
+        ]
+
+        requests = azutils.create_batch_requests(
+            prompts = data,
+            deployment_model = models.pop(),
+            batch_filename = batch_filename,
+            id_key = "custom_id",
+            prompt_key = "prompt",
+            temperature = temperature,
+            max_tokens = max_tokens,
+            output_structure = output_structure
+        )
+
+        self.batch_requests = requests
+        self.batch_filename = batch_filename
+    
+    def _submit_batch(
+        self,
+        client: AzureOpenAI,
+        encoding: str = "utf-8"
+    ):
+        
+        batch_id = azutils.submit_batch(
+            client = client,
+            batch_requests = self.batch_requests,
+            batch_input_path = self.batch_filename,
+            encoding = encoding
+        )
+
+        self.batch_id = batch_id
+
+    def _retrieve_batch_results(
+        self,
+        client: AzureOpenAI,
+        output_path: Optional[Union[str, Path]] = None,
+        error_path: Optional[Union[str, Path]] = None,
+        parse_json: bool = True,
+    ):
+        
+        if self.batch_id is None:
+            raise ValueError("Please first submit the batch to get a batch_id")
+
+        responses = azutils.retrieve_batch_results(
+            client = client,
+            batch_id = self.batch_id,
+            output_path = output_path,
+            error_path = error_path,
+            parse_json = parse_json,
+            return_format = "LLMResponse"
+        )
+
+        self.output_filename = output_path
+        self.error_filename = error_path
+
+        # Create temporary dict for efficient accesing
+        temp_dict = {}
+        for ann in self.annotations:
+            c_id = ann.metadata["custom_id"] #type: ignore
+            if c_id in temp_dict:
+                raise KeyError("Two annotations have the same custom_id")
+            else:
+                temp_dict[c_id] = ann
+
+        for c_id, llm_response in responses["outputs"].items():
+            if c_id in temp_dict:
+                temp_dict[c_id].llm_response = llm_response
+            else:
+                logging.warning(f"Received unknown custom_id: {c_id}")
+
+    def _parse_structured_output(
+        self,
+        schema: Type[BaseModel] = PropAnnotationSchema,
+        lower_bound_field: str = "lower_bound",
+        upper_bound_field: str = "upper_bound"
+    ) -> None:
+        
+        for ann in self.annotations:
+            try:
+                ann._parse_structured_llm_output(
+                    schema = schema,
+                    lower_bound_field = lower_bound_field,
+                    upper_bound_field = upper_bound_field
+                )
+            except ValueError as ex:
+                logging.warning(f"Failed to annotate annotation: {ex}")
+                continue
+
+    def annotate(
+        self,
+        client: AzureOpenAI,
+        annotator: Literal["model", "human"] = "model",
+        batch_filename: Optional[Union[str, Path]] = None,
+        custom_ids: Optional[Union[List[str], Literal["metadata"]]] = None,
+        annotator_temeperature: float = 0.0,
+        max_tokens: Optional[int] = None,
+        schema: Union[Literal["free"], Type[BaseModel]] = PropAnnotationSchema,
+        lower_bound_field: str = "lower_bound",
+        upper_bound_field: str = "upper_bound",
+        retry_time: int = 60,
+        timeout: int = 3600
+    ):
+        
+        if annotator == "model":
+            # Create batch and submit
+            self._prepare_batch(
+                batch_filename = batch_filename,
+                temperature = annotator_temeperature,
+                max_tokens = max_tokens,
+                custom_ids = custom_ids,
+                schema = schema
+            )
+
+            self._submit_batch(
+                client = client
+            )
+
+            # See if batch is complete every retry_time seconds:
+            done = False
+            start_time = time.time()
+            while not done:
+                if time.time() - start_time > timeout:
+                    raise TimeoutError(f"Batch {self.batch_id} timed out")
+                status = client.batches.retrieve(self.batch_id).status #type: ignore
+                if status == "completed":
+                    self._retrieve_batch_results(
+                        client = client,
+                        output_path = self.output_filename,
+                        error_path = self.error_filename
+                    )
+                    done = True
+                elif status in {"cancelled", "failed"}:
+                    raise RuntimeError(f"Batch {self.batch_id} ended with status: {status}")
+                else:
+                    time.sleep(retry_time)
+
+            if schema != "free":
+                # Parse results and fill annotation items
+                self._parse_structured_output(
+                    schema = schema,
+                    lower_bound_field = lower_bound_field,
+                    upper_bound_field = upper_bound_field
+                )
+            
+            else:
+                raise NotImplementedError
+
+        else:
+            raise NotImplementedError
