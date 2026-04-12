@@ -12,6 +12,8 @@ from pathlib import Path
 from pydantic import BaseModel
 from dataclasses import dataclass
 
+import pandas as pd
+
 from openai import AzureOpenAI
 import azure_utils as azutils
 from azure_utils import LLMResponse
@@ -29,10 +31,58 @@ class PropensityAnnotation:
     task_prompt: str
     source: str
     presentation_prompt: str = "Now annotate the following instance:\n"
-    llm_response: Optional[LLMResponse] = None
+    llm_response: Optional[Union[Dict, LLMResponse]] = None
     lower_bound: Optional[int | float] = None
     upper_bound: Optional[int | float] = None
     metadata: Optional[Dict] = None
+
+    def __init__(
+        self,
+        propensity: str,
+        system_prompt: str,
+        rubric: str,
+        task_prompt: str,
+        source: str,
+        presentation_prompt: str = "Now annotate the following instance:\n",
+        llm_response: Optional[Union[Dict, LLMResponse]] = None,
+        lower_bound: Optional[int | float] = None,
+        upper_bound: Optional[int | float] = None,
+        metadata: Optional[Dict] = None
+    ):
+        
+        self.propensity = propensity
+        self.system_prompt = system_prompt
+        self.rubric = rubric
+        self.task_prompt = task_prompt
+        self.source = source
+        self.presentation_prompt = presentation_prompt
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+        self.metadata = metadata
+
+        if isinstance(llm_response, LLMResponse):
+            self.llm_response = llm_response
+        elif isinstance(llm_response, dict):
+            texts = []
+            logprobs_all = []
+
+            for msg in llm_response.get("output", []):
+                for content in msg.get("content", []):
+                    if content.get("type") == "output_text":
+                        texts.append(content.get("text", ""))
+                        if content.get("logprobs"):
+                            logprobs_all.append(content.get("logprobs"))
+
+            text = "\n".join(texts).strip()
+            logprobs = logprobs_all if logprobs_all else None
+            tokens = llm_response.get("usage", None)
+
+            self.llm_response = LLMResponse(
+                text = text,
+                raw = llm_response,
+                logprobs = logprobs,
+                tokens = tokens
+            )
 
     def get_full_prompt(self) -> str:
         return self.system_prompt + self.rubric + self.presentation_prompt + self.task_prompt
@@ -48,7 +98,7 @@ class PropensityAnnotation:
             "task_prompt": self.task_prompt,
             "presentation_prompt": self.presentation_prompt,
             "source": self.source,
-            "raw_response": self.llm_response,
+            "llm_response": self.llm_response.raw if isinstance(self.llm_response, LLMResponse) else self.llm_response,
             "lower_bound": self.lower_bound,
             "upper_bound": self.upper_bound,
             "metadata": self.metadata
@@ -123,7 +173,7 @@ class PropensityAnnotation:
             raise ValueError("This instance has not been annotated yet")
 
         try:
-            parsed_response = json.loads(self.llm_response.text)
+            parsed_response = json.loads(self.llm_response.text) #type: ignore
         except Exception as ex:
             raise ValueError(f"Failed to parse LLM output as JSON: {ex}")
         
@@ -203,9 +253,110 @@ class PropAnnotationCollection:
     output_filename: Optional[Union[str, Path]] = None
     error_filename: Optional[Union[str, Path]] = None
 
+    @classmethod
+    def from_jsonl(
+        cls,
+        path: Union[str, Path],
+        encoding: str = "utf-8"
+    ) -> PropAnnotationCollection:
+
+        annotations = []
+        with open(path, "r", encoding = "utf-8") as f:
+            for line in f:
+                data = json.loads(line)
+                annotations.append(PropensityAnnotation(**data))
+        return cls(annotations = annotations)
+
     def __iter__(self):
         for ann in self.annotations:
             yield ann
+
+    def to_list(self) -> List[Dict]:
+        return [ann.to_dict() for ann in self.annotations]
+
+    def save_jsonl(
+        self,
+        path: Union[str, Path],
+        encoding: str = "utf-8"
+    ) -> None:
+        
+        path = Path(path)
+        path.parent.mkdir(parents = True, exist_ok = True)
+
+        with open(path, "w", encoding = encoding) as f:
+            for ann in self.annotations:
+                f.write(json.dumps(ann.to_dict()) + "\n")
+
+    def save_csv(
+        self,
+        path: Union[str, Path],
+        encoding: str = "utf-8",
+        fields: Optional[List[str]] = None,
+        *args,
+        **kwargs
+    ):
+        props = []
+        sys_prompts = []
+        rubrics = []
+        pres_prompts = []
+        task_prompts = []
+        sources = []
+        lowers = []
+        uppers = []
+        metas = []
+
+        DEFAULT_FIELDS = [
+                "propensity",
+                "system_prompt",
+                "rubric",
+                "presentation_prompt",
+                "task_prompt",
+                "source",
+                "lower_bound",
+                "upper_bound",
+                "metadata"
+            ]
+
+        if fields is None:
+            fields = DEFAULT_FIELDS
+        else:
+            old_fields = []
+            new_fields = []
+            for f in fields:
+                if f not in DEFAULT_FIELDS:
+                    new_fields.append(f)
+                else:
+                    old_fields.append(f)
+
+        info = {}
+        for f in fields:
+            info[f] = list()
+
+        for ann in self.annotations:
+
+            # Common already existing fields
+            for f in old_fields:
+                info[f].append(getattr(ann, f, None))
+
+            # Check metadata for new fields
+            metadata = ann.metadata if ann.metadata is not None else dict()
+            for f in new_fields:
+                info[f].append(metadata.get(f, None))
+
+            # props.append(ann.propensity)
+            # sys_prompts.append(ann.system_prompt)
+            # rubrics.append(ann.rubric)
+            # pres_prompts.append(ann.presentation_prompt)
+            # task_prompts.append(ann.task_prompt)
+            # sources.append(ann.source)
+            # lowers.append(ann.lower_bound)
+            # uppers.append(ann.upper_bound)
+            # metas.append(ann.metadata)
+
+        df = pd.DataFrame(info)
+
+        # df = df.loc[:, fields]
+        df.to_csv(path, encoding = encoding, *args, **kwargs)
 
     def _prepare_batch(
         self,
@@ -495,7 +646,7 @@ class PropAnnotationCollection:
                 if verbosity > 0:
                     print("Batch successfully parsed")
                 if verbosity > 1:
-                    print(f"{success}/{total} ({round(success/total*100)}%) successes, {errors}/{total} ({round(errors/total*100)}%) errors")
+                    print(f"{success}/{total} ({round(success/total*100, 2)}%) successes, {errors}/{total} ({round(errors/total*100, 2)}%) errors")
 
             else:
                 raise NotImplementedError
