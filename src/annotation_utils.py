@@ -346,6 +346,54 @@ class PropAnnotationCollection:
                 logging.warning(f"Failed to annotate annotation: {ex}")
                 continue
 
+    def prepare_and_send_batch(
+        self,
+        client: AzureOpenAI,
+        batch_filename: Union[str, Path, None],
+        temperature: float,
+        max_tokens: Union[int, None],
+        custom_ids: Optional[Union[List[str], Literal["metadata"]]] = None,
+        schema: Union[Literal["free"], Type[BaseModel]] = PropAnnotationSchema,
+        encoding: str = "utf-8"
+    ):
+        
+        self._prepare_batch(
+            batch_filename = batch_filename,
+            temperature = temperature,
+            max_tokens = max_tokens,
+            custom_ids = custom_ids,
+            schema = schema
+        )
+
+        self._submit_batch(
+            client = client,
+            encoding = encoding
+        )
+
+    def retrieve_and_parse_batch(
+        self,
+        client: AzureOpenAI,
+        output_path: Optional[Union[str, Path]] = None,
+        error_path: Optional[Union[str, Path]] = None,
+        parse_json: bool = True,
+        schema: Union[Literal["free"], Type[BaseModel]] = PropAnnotationSchema,
+        lower_bound_field: str = "lower_bound",
+        upper_bound_field: str = "upper_bound",
+    ):
+        
+        self._retrieve_batch_results(
+            client = client,
+            output_path = output_path,
+            error_path = error_path,
+            parse_json = parse_json
+        )
+        
+        self._parse_structured_output(
+            schema = schema, #type: ignore
+            lower_bound_field = lower_bound_field,
+            upper_bound_field = upper_bound_field
+        )
+
     def annotate_batch(
         self,
         client: AzureOpenAI,
