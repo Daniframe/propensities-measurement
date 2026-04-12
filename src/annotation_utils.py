@@ -6,6 +6,7 @@ import re
 import time
 import json
 import logging
+from tqdm import tqdm
 
 from pathlib import Path
 from pydantic import BaseModel
@@ -157,7 +158,7 @@ class PropensityAnnotation:
         self,
         client: AzureOpenAI,
         annotator: Literal["model", "human"] = "model",
-        annotator_temeperature: float = 0.0,
+        annotator_temperature: float = 0.0,
         max_tokens: Optional[int] = None,
         schema: Union[Literal["free"], Type[BaseModel]] = PropAnnotationSchema,
         lower_bound_field: str = "lower_bound",
@@ -168,7 +169,7 @@ class PropensityAnnotation:
             # Call LLM annotator
             self._llm_call_single(
                 client = client,
-                temperature = annotator_temeperature,
+                temperature = annotator_temperature,
                 max_tokens = max_tokens,
                 schema = schema)
             
@@ -341,13 +342,13 @@ class PropAnnotationCollection:
                 logging.warning(f"Failed to annotate annotation: {ex}")
                 continue
 
-    def annotate(
+    def annotate_batch(
         self,
         client: AzureOpenAI,
         annotator: Literal["model", "human"] = "model",
         batch_filename: Optional[Union[str, Path]] = None,
         custom_ids: Optional[Union[List[str], Literal["metadata"]]] = None,
-        annotator_temeperature: float = 0.0,
+        annotator_temperature: float = 0.0,
         max_tokens: Optional[int] = None,
         schema: Union[Literal["free"], Type[BaseModel]] = PropAnnotationSchema,
         lower_bound_field: str = "lower_bound",
@@ -360,7 +361,7 @@ class PropAnnotationCollection:
             # Create batch and submit
             self._prepare_batch(
                 batch_filename = batch_filename,
-                temperature = annotator_temeperature,
+                temperature = annotator_temperature,
                 max_tokens = max_tokens,
                 custom_ids = custom_ids,
                 schema = schema
@@ -402,3 +403,30 @@ class PropAnnotationCollection:
 
         else:
             raise NotImplementedError
+        
+
+    def annotate_sequential(
+        self,
+        client: AzureOpenAI,
+        annotator: Literal["model", "human"] = "model",
+        annotator_temperature: float = 0.0,
+        max_tokens: Optional[int] = None,
+        schema: Union[Literal["free"], Type[BaseModel]] = PropAnnotationSchema,
+        lower_bound_field: str = "lower_bound",
+        upper_bound_field: str = "upper_bound"
+    ):
+        
+        for ann in tqdm(self.annotations, desc = "Annotating sequentially"):
+            try:
+                ann.annotate(
+                    client = client,
+                    annotator = annotator,
+                    annotator_temperature = annotator_temperature,
+                    max_tokens = max_tokens,
+                    schema = schema,
+                    lower_bound_field = lower_bound_field,
+                    upper_bound_field = upper_bound_field
+                )
+            except Exception as ex:
+                logging.warning(f"Failed annotation: {ex}")
+                continue
