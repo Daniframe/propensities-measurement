@@ -195,6 +195,10 @@ class PropAnnotationCollection:
     output_filename: Optional[Union[str, Path]] = None
     error_filename: Optional[Union[str, Path]] = None
 
+    def __iter__(self):
+        for ann in self.annotations:
+            yield ann
+
     def _prepare_batch(
         self,
         batch_filename: Union[str, Path, None],
