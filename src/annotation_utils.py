@@ -15,8 +15,8 @@ from dataclasses import dataclass
 import pandas as pd
 
 from openai import AzureOpenAI
-import azure_utils as azutils
-from azure_utils import LLMResponse
+from . import azure_utils as azutils
+LLMResponse = azutils.LLMResponse
 
 class PropAnnotationSchema(BaseModel):
     lower_bound: float
