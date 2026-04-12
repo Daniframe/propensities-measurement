@@ -12,6 +12,9 @@ from dataclasses import dataclass
 
 from openai import AzureOpenAI, NOT_GIVEN
 
+class StatusError(Exception):
+    pass
+
 @dataclass
 class LLMResponse:
     text: str                # main output
@@ -358,7 +361,8 @@ def submit_batch(
     client: AzureOpenAI,
     batch_requests: Optional[List[dict]] = None,
     batch_input_path: Optional[Union[str, Path]] = None,
-    encoding: str = "utf-8"
+    encoding: str = "utf-8",
+    verbosity: int = 1
 ) -> str:
     
     """
@@ -434,6 +438,9 @@ def submit_batch(
         completion_window = "24h"
     )
 
+    if verbosity > 0:
+        print(f"Batch successfully submitted with id {batch.id}")
+
     return batch.id
 
 def retrieve_batch_results(
@@ -443,7 +450,8 @@ def retrieve_batch_results(
     error_path: Optional[Union[str, Path]] = None,
     parse_json: bool = True,
     return_format: Literal["LLMResponse", "python"] = "LLMResponse",
-    encoding: str = "utf-8"
+    encoding: str = "utf-8",
+    verbosity: int = 1
 ) -> dict:
     
     """
@@ -512,7 +520,7 @@ def retrieve_batch_results(
     batch = client.batches.retrieve(batch_id)
 
     if batch.status != "completed":
-        raise ValueError(f"Batch {batch_id} is not completed. Current status: {batch.status}")
+        raise StatusError(f"Batch {batch_id} is not completed. Current status: {batch.status}")
 
     results = {"outputs": [], "errors": []}
 
@@ -547,10 +555,15 @@ def retrieve_batch_results(
                 json.loads(line) for line in error_content.strip().splitlines() if line
             ]
 
-    logging.info(
-        f"Retrieved results for batch {batch_id}: "
-        f"{len(results['outputs'])} outputs, {len(results['errors'])} errors."
-    )
+    total = len(results["outputs"]) + len(results["errors"])
+    success = len(results['outputs'])
+    errors = len(results['errors'])
+
+    if verbosity > 0:
+        print(
+            f"Retrieved results for batch {batch_id}: "
+            f"{success}/{total} ({round(success/total)}) successes, {errors}/{total} ({round(errors/total)}) errors."
+        )
 
     # ---- RETURN FORMATS ----
     if return_format == "python":
