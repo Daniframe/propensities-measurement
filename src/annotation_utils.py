@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, List, Dict, Union, Type, Literal
+from typing import Optional, List, Dict, Union, Type, Literal, Tuple
 
 import os
 import re
@@ -162,7 +162,8 @@ class PropensityAnnotation:
         max_tokens: Optional[int] = None,
         schema: Union[Literal["free"], Type[BaseModel]] = PropAnnotationSchema,
         lower_bound_field: str = "lower_bound",
-        upper_bound_field: str = "upper_bound"
+        upper_bound_field: str = "upper_bound",
+        verbosity: int = 1
     ):
 
         if annotator == "model":
@@ -173,6 +174,9 @@ class PropensityAnnotation:
                 max_tokens = max_tokens,
                 schema = schema)
             
+            if verbosity > 0:
+                print("Request sent and responded by the annotator model")
+
             # Parse results
             if schema != "free":
                 self._parse_structured_llm_output(
@@ -180,6 +184,10 @@ class PropensityAnnotation:
                     lower_bound_field = lower_bound_field,
                     upper_bound_field = upper_bound_field
                 )
+
+                if verbosity > 0:
+                    print("Annotation successfully parsed")
+
             else:
                 raise NotImplementedError
         else:
@@ -333,8 +341,12 @@ class PropAnnotationCollection:
         schema: Type[BaseModel] = PropAnnotationSchema,
         lower_bound_field: str = "lower_bound",
         upper_bound_field: str = "upper_bound"
-    ) -> None:
+    ) -> Tuple[int, int, int]:
         
+        total = len(self.annotations)
+        success = 0
+        errors = 0
+
         for ann in self.annotations:
             try:
                 ann._parse_structured_llm_output(
@@ -342,9 +354,13 @@ class PropAnnotationCollection:
                     lower_bound_field = lower_bound_field,
                     upper_bound_field = upper_bound_field
                 )
+                success += 1
             except ValueError as ex:
                 logging.warning(f"Failed to annotate annotation: {ex}")
+                errors += 1
                 continue
+
+        return success, errors, total
 
     def prepare_and_send_batch(
         self,
@@ -406,7 +422,8 @@ class PropAnnotationCollection:
         lower_bound_field: str = "lower_bound",
         upper_bound_field: str = "upper_bound",
         retry_time: int = 60,
-        timeout: int = 3600
+        timeout: int = 3600,
+        verbosity: int = 1
     ):
         
         if annotator == "model":
@@ -422,6 +439,9 @@ class PropAnnotationCollection:
             self._submit_batch(
                 client = client
             )
+
+            if verbosity > 0:
+                print(f"Annotation successfully sent in batch form, batch id: {self.batch_id}")
 
             # See if batch is complete every retry_time seconds:
             done = False
@@ -440,16 +460,26 @@ class PropAnnotationCollection:
                 elif status in {"cancelled", "failed"}:
                     raise RuntimeError(f"Batch {self.batch_id} ended with status: {status}")
                 else:
+                    if verbosity > 1:
+                        print(f"Current status of annotation batch: {status}")
                     time.sleep(retry_time)
+
+            if verbosity > 0:
+                print("Batch successfully completed. Parsing results...")
 
             if schema != "free":
                 # Parse results and fill annotation items
-                self._parse_structured_output(
+                success, errors, total = self._parse_structured_output(
                     schema = schema,
                     lower_bound_field = lower_bound_field,
                     upper_bound_field = upper_bound_field
                 )
             
+                if verbosity > 0:
+                    print("Batch successfully parsed")
+                if verbosity > 1:
+                    print(f"{success}/{total} ({round(success/total*100)}%) successes, {errors}/{total} ({round(errors/total*100)}%) errors")
+
             else:
                 raise NotImplementedError
 
