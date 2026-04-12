@@ -274,6 +274,7 @@ def create_batch_requests(
     prompt_key: str = "prompt",
     temperature: float = 0.0,
     max_tokens: Optional[int] = None,
+    output_structure: Optional[Dict] = None,
     encoding: str = "utf-8"
 ) -> List[dict] | None:
     
@@ -338,7 +339,8 @@ def create_batch_requests(
                 "model": deployment_model,
                 "input": q[prompt_key],
                 "temperature": temperature,
-                "max_output_tokens": max_tokens
+                "max_output_tokens": max_tokens,
+                "text": output_structure
             }
         })
 
