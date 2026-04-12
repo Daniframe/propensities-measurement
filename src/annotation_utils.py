@@ -340,25 +340,42 @@ class PropAnnotationCollection:
         self,
         schema: Type[BaseModel] = PropAnnotationSchema,
         lower_bound_field: str = "lower_bound",
-        upper_bound_field: str = "upper_bound"
+        upper_bound_field: str = "upper_bound",
+        verbosity: int = 1
     ) -> Tuple[int, int, int]:
         
         total = len(self.annotations)
         success = 0
         errors = 0
 
-        for ann in self.annotations:
-            try:
-                ann._parse_structured_llm_output(
-                    schema = schema,
-                    lower_bound_field = lower_bound_field,
-                    upper_bound_field = upper_bound_field
-                )
-                success += 1
-            except ValueError as ex:
-                logging.warning(f"Failed to annotate annotation: {ex}")
-                errors += 1
-                continue
+        if verbosity > 1:
+            for ann in tqdm(self.annotations, desc = "Parsing LLM responses"):
+                try:
+                    ann._parse_structured_llm_output(
+                        schema = schema,
+                        lower_bound_field = lower_bound_field,
+                        upper_bound_field = upper_bound_field
+                    )
+                    success += 1
+                except ValueError as ex:
+                    logging.warning(f"Failed to annotate annotation: {ex}")
+                    errors += 1
+                    continue
+
+        else:
+            for ann in self.annotations:
+                try:
+                    ann._parse_structured_llm_output(
+                        schema = schema,
+                        lower_bound_field = lower_bound_field,
+                        upper_bound_field = upper_bound_field
+                    )
+                    success += 1
+                except ValueError as ex:
+                    logging.warning(f"Failed to annotate annotation: {ex}")
+                    errors += 1
+                    continue
+
 
         return success, errors, total
 
