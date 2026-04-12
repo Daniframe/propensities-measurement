@@ -562,7 +562,7 @@ def retrieve_batch_results(
     if verbosity > 0:
         print(
             f"Retrieved results for batch {batch_id}: "
-            f"{success}/{total} ({round(success/total)}%) successes, {errors}/{total} ({round(errors/total)}%) errors."
+            f"{success}/{total} ({round(success/total*100)}%) successes, {errors}/{total} ({round(errors/total*100)}%) errors."
         )
 
     # ---- RETURN FORMATS ----
