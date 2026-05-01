@@ -15,7 +15,8 @@ from dataclasses import dataclass
 import pandas as pd
 
 from openai import AzureOpenAI
-from . import azure_utils as azutils
+# from . import azure_utils as azutils
+import azure_utils as azutils
 LLMResponse = azutils.LLMResponse
 
 class PropAnnotationSchema(BaseModel):
