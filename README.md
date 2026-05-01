@@ -28,6 +28,6 @@ annotation.annotate(
 print(annotation.lower_bound, annotation.upper_bound, annotation.metadata["explanation"])
 ```
 
-```python
+```bash
 1.0 -2.0 The sentence has an even number of words (8), setting the upper bound to -2. The most repeated word ('like') appears 3 times, setting the lower bound to 1.
 ```
