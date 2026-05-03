@@ -4,6 +4,11 @@
 
 We can use annotation_utils in conjunction with azure_utils to annotate one or multiple instances.
 
+The Azure endpoint should be set to
+```bash
+export AZURE_OPENAI_ENDPOINT=https://openaiazureprop.openai.azure.com/
+```
+
 ### Single annotation
 
 For a single annotation, we can use the `PropensityAnnotation` object:
