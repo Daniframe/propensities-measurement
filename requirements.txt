@@ -7,3 +7,5 @@ python-dotenv
 pyyaml
 tqdm
 notebook
+openai
+pydantic
