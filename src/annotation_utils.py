@@ -15,8 +15,8 @@ from dataclasses import dataclass
 import pandas as pd
 
 from openai import AzureOpenAI
-# from . import azure_utils as azutils
-import azure_utils as azutils
+from . import azure_utils as azutils
+# import azure_utils as azutils
 LLMResponse = azutils.LLMResponse
 
 class PropAnnotationSchema(BaseModel):
@@ -56,6 +56,7 @@ class PropensityAnnotation:
         self.rubric = rubric
         self.task_prompt = task_prompt
         self.source = source
+        self.llm_response = llm_response
         self.presentation_prompt = presentation_prompt
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
@@ -136,6 +137,39 @@ class PropensityAnnotation:
 
         self.llm_response = llm_response #type: ignore
     
+    def _parse_free_text_llm_output(
+        self,
+        pattern: re.Pattern | str,
+        verbosity: int = 1
+    ) -> None:
+        
+        # Parse schema output
+        if self.llm_response is None:
+            raise ValueError("This instance has not been annotated yet")
+        
+        try:
+            matches = re.findall(pattern, self.llm_response.text) #type: ignore
+            if verbosity > 2:
+                print(matches)
+            if not matches:
+                raise ValueError("No FINAL_RANGE found")
+            
+            lb, ub = map(int, matches[-1])
+
+            self.lower_bound = lb
+            self.upper_bound = ub
+            if self.metadata is None:
+                self.metadata = {
+                    "explanation": self.llm_response.text #type: ignore
+                }
+            else:
+                self.metadata.update(
+                    {"explanation": self.llm_response.text} #type: ignore
+                )
+
+        except Exception:
+            print("Failed to parse LLM output")
+
     def _parse_structured_llm_output(
         self,
         schema: Type[BaseModel] = PropAnnotationSchema,
@@ -267,6 +301,9 @@ class PropAnnotationCollection:
                 data = json.loads(line)
                 annotations.append(PropensityAnnotation(**data))
         return cls(annotations = annotations)
+
+    def __getitem__(self, index):
+        return self.annotations[index]
 
     def __iter__(self):
         for ann in self.annotations:
@@ -488,6 +525,42 @@ class PropAnnotationCollection:
             else:
                 logging.warning(f"Received unknown custom_id: {c_id}")
 
+    def _parse_free_text_llm_output(
+        self,
+        regex: re.Pattern | str = r"<FINAL_RANGE>\s*\[\s*([+-]?\d+)\s*,\s*([+-]?\d+)\s*\]\s*</FINAL_RANGE>",
+        verbosity: int = 1
+        ) -> Tuple[int, int, int]:
+
+        total = len(self.annotations)
+        success = 0
+        errors = 0
+
+        if verbosity > 1:
+            for ann in tqdm(self.annotations, desc = "Parsing LLM responses"):
+                try:
+                    ann._parse_free_text_llm_output(
+                        pattern = regex
+                    )
+                    success += 1
+                except Exception as ex:
+                    logging.warning(f"Failed to annotate annotation: {ex}")
+                    errors += 1
+                    continue
+
+        else:
+            for ann in self.annotations:
+                try:
+                    ann._parse_free_text_llm_output(
+                        pattern = regex
+                    )
+                    success += 1
+                except Exception as ex:
+                    logging.warning(f"Failed to annotate annotation: {ex}")
+                    errors += 1
+                    continue
+
+        return success, errors, total
+
     def _parse_structured_output(
         self,
         schema: Type[BaseModel] = PropAnnotationSchema,
@@ -592,6 +665,7 @@ class PropAnnotationCollection:
         upper_bound_field: str = "upper_bound",
         retry_time: int = 60,
         timeout: int = 3600,
+        regex: Optional[re.Pattern | str] = None,
         verbosity: int = 1
     ):
         
@@ -650,7 +724,11 @@ class PropAnnotationCollection:
                     print(f"{success}/{total} ({round(success/total*100, 2)}%) successes, {errors}/{total} ({round(errors/total*100, 2)}%) errors")
 
             else:
-                raise NotImplementedError
+                if regex is None:
+                    raise ValueError("regex should be a pattern, not None")
+                success, errors, total = self._parse_free_text_llm_output(
+                    regex, verbosity = verbosity
+                )
 
         else:
             raise NotImplementedError
