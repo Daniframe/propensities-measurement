@@ -63,7 +63,7 @@ if __name__ == "__main__":
         )
 
         client = azutils.get_client(
-            api_key = "BOMS1STRPMPDywcmyT6iglYJWyGqObqUbnDzjdeJRh3TyEQYTKHlJQQJ99CAACYeBjFXJ3w3AAABACOG6NkY", 
+            api_key = "", 
             endpoint = "https://openaiazureprop.openai.azure.com/")
 
         annotations.annotate_batch(
