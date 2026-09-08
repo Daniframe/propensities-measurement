@@ -19,6 +19,9 @@ from . import azure_utils as azutils
 # import azure_utils as azutils
 LLMResponse = azutils.LLMResponse
 
+# Pattern emitted by the presentation prompt in `rubrics/presentation.txt`
+FINAL_RANGE_PATTERN = r"<FINAL_RANGE>\s*\[\s*([+-]?\d+)\s*,\s*([+-]?\d+)\s*\]\s*</FINAL_RANGE>"
+
 class PropAnnotationSchema(BaseModel):
     lower_bound: float
     upper_bound: float
@@ -109,7 +112,7 @@ class PropensityAnnotation:
     def _llm_call_single(
         self, 
         client: AzureOpenAI, 
-        temperature: float,
+        temperature: Optional[float],
         max_tokens: Optional[int],
         schema: Union[Literal["free"], Type[BaseModel]] = PropAnnotationSchema,
     ):
@@ -139,36 +142,41 @@ class PropensityAnnotation:
     
     def _parse_free_text_llm_output(
         self,
-        pattern: re.Pattern | str,
+        pattern: re.Pattern | str = FINAL_RANGE_PATTERN,
         verbosity: int = 1
     ) -> None:
-        
+
+        """
+        Extract the propensity range from a free-form LLM answer.
+
+        Raises:
+            ValueError:
+                If the instance has no LLM response yet, or if the response
+                does not contain a match for `pattern`.
+        """
+
         # Parse schema output
         if self.llm_response is None:
             raise ValueError("This instance has not been annotated yet")
-        
-        try:
-            matches = re.findall(pattern, self.llm_response.text) #type: ignore
-            if verbosity > 2:
-                print(matches)
-            if not matches:
-                raise ValueError("No FINAL_RANGE found")
-            
-            lb, ub = map(int, matches[-1])
 
-            self.lower_bound = lb
-            self.upper_bound = ub
-            if self.metadata is None:
-                self.metadata = {
-                    "explanation": self.llm_response.text #type: ignore
-                }
-            else:
-                self.metadata.update(
-                    {"explanation": self.llm_response.text} #type: ignore
-                )
+        matches = re.findall(pattern, self.llm_response.text) #type: ignore
+        if verbosity > 2:
+            print(matches)
+        if not matches:
+            raise ValueError("No FINAL_RANGE found in the LLM output")
 
-        except Exception:
-            print("Failed to parse LLM output")
+        lb, ub = map(int, matches[-1])
+
+        self.lower_bound = lb
+        self.upper_bound = ub
+        if self.metadata is None:
+            self.metadata = {
+                "explanation": self.llm_response.text #type: ignore
+            }
+        else:
+            self.metadata.update(
+                {"explanation": self.llm_response.text} #type: ignore
+            )
 
     def _parse_structured_llm_output(
         self,
@@ -243,40 +251,76 @@ class PropensityAnnotation:
         self,
         client: AzureOpenAI,
         annotator: Literal["model", "human"] = "model",
-        annotator_temperature: float = 0.0,
+        annotator_temperature: Optional[float] = 0.0,
         max_tokens: Optional[int] = None,
         schema: Union[Literal["free"], Type[BaseModel]] = PropAnnotationSchema,
         lower_bound_field: str = "lower_bound",
         upper_bound_field: str = "upper_bound",
+        regex: Optional[re.Pattern | str] = None,
         verbosity: int = 1
     ):
 
-        if annotator == "model":
-            # Call LLM annotator
-            self._llm_call_single(
-                client = client,
-                temperature = annotator_temperature,
-                max_tokens = max_tokens,
-                schema = schema)
-            
-            if verbosity > 0:
-                print("Request sent and responded by the annotator model")
+        """
+        Annotate this instance with a single (synchronous) call to the LLM.
 
-            # Parse results
-            if schema != "free":
-                self._parse_structured_llm_output(
-                    schema = schema,
-                    lower_bound_field = lower_bound_field,
-                    upper_bound_field = upper_bound_field
-                )
+        Args:
+            client (AzureOpenAI):
+                An initialized Azure OpenAI client.
 
-                if verbosity > 0:
-                    print("Annotation successfully parsed")
+            annotator (Literal["model", "human"]):
+                Only "model" is implemented.
 
-            else:
-                raise NotImplementedError
+            annotator_temperature (float | None):
+                Sampling temperature. Pass None for reasoning deployments
+                (o-series, gpt-5.x), which reject the parameter.
+
+            max_tokens (int | None):
+                Maximum number of output tokens. For reasoning deployments this
+                budget also covers the (hidden) reasoning tokens.
+
+            schema (Literal["free"] | Type[BaseModel]):
+                "free" asks for free-form text, parsed with `regex`. A pydantic
+                model asks for structured JSON output, parsed against the model.
+
+            regex (re.Pattern | str | None):
+                Pattern used to extract the range when `schema = "free"`.
+                Defaults to `FINAL_RANGE_PATTERN`, i.e. the `<FINAL_RANGE>[LB, UB]</FINAL_RANGE>`
+                tag requested by `rubrics/presentation.txt`.
+
+        Raises:
+            ValueError:
+                If the LLM output cannot be parsed into a propensity range.
+        """
+
+        if annotator != "model":
+            raise NotImplementedError("Only `annotator = 'model'` is implemented")
+
+        # Call LLM annotator
+        self._llm_call_single(
+            client = client,
+            temperature = annotator_temperature,
+            max_tokens = max_tokens,
+            schema = schema)
+
+        if verbosity > 0:
+            print("Request sent and responded by the annotator model")
+
+        # Parse results
+        if schema != "free":
+            self._parse_structured_llm_output(
+                schema = schema,
+                lower_bound_field = lower_bound_field,
+                upper_bound_field = upper_bound_field
+            )
+
         else:
-            raise NotImplementedError
+            self._parse_free_text_llm_output(
+                pattern = regex if regex is not None else FINAL_RANGE_PATTERN,
+                verbosity = verbosity
+            )
+
+        if verbosity > 0:
+            print("Annotation successfully parsed")
             
 
 @dataclass(slots = True)
@@ -296,7 +340,7 @@ class PropAnnotationCollection:
     ) -> PropAnnotationCollection:
 
         annotations = []
-        with open(path, "r", encoding = "utf-8") as f:
+        with open(path, "r", encoding = encoding) as f:
             for line in f:
                 data = json.loads(line)
                 annotations.append(PropensityAnnotation(**data))
@@ -323,7 +367,9 @@ class PropAnnotationCollection:
 
         with open(path, "w", encoding = encoding) as f:
             for ann in self.annotations:
-                f.write(json.dumps(ann.to_dict()) + "\n")
+                # `default = str` keeps raw API payloads (which may carry
+                # non-JSON-native objects) from breaking the whole dump
+                f.write(json.dumps(ann.to_dict(), default = str) + "\n")
 
     def save_csv(
         self,
@@ -333,16 +379,6 @@ class PropAnnotationCollection:
         *args,
         **kwargs
     ):
-        props = []
-        sys_prompts = []
-        rubrics = []
-        pres_prompts = []
-        task_prompts = []
-        sources = []
-        lowers = []
-        uppers = []
-        metas = []
-
         DEFAULT_FIELDS = [
                 "propensity",
                 "system_prompt",
@@ -357,14 +393,11 @@ class PropAnnotationCollection:
 
         if fields is None:
             fields = DEFAULT_FIELDS
-        else:
-            old_fields = []
-            new_fields = []
-            for f in fields:
-                if f not in DEFAULT_FIELDS:
-                    new_fields.append(f)
-                else:
-                    old_fields.append(f)
+
+        # `old_fields` live on the annotation itself, `new_fields` are looked up
+        # in its `metadata` dict. Both lists must exist for either branch.
+        old_fields = [f for f in fields if f in DEFAULT_FIELDS]
+        new_fields = [f for f in fields if f not in DEFAULT_FIELDS]
 
         info = {}
         for f in fields:
@@ -381,20 +414,15 @@ class PropAnnotationCollection:
             for f in new_fields:
                 info[f].append(metadata.get(f, None))
 
-            # props.append(ann.propensity)
-            # sys_prompts.append(ann.system_prompt)
-            # rubrics.append(ann.rubric)
-            # pres_prompts.append(ann.presentation_prompt)
-            # task_prompts.append(ann.task_prompt)
-            # sources.append(ann.source)
-            # lowers.append(ann.lower_bound)
-            # uppers.append(ann.upper_bound)
-            # metas.append(ann.metadata)
-
         df = pd.DataFrame(info)
+        df = df.loc[:, fields]
 
-        # df = df.loc[:, fields]
-        df.to_csv(path, encoding = encoding, *args, **kwargs)
+        path = Path(path)
+        path.parent.mkdir(parents = True, exist_ok = True)
+
+        df.to_csv(path, *args, encoding = encoding, **kwargs)
+
+        return df
 
     def _prepare_batch(
         self,
@@ -424,11 +452,14 @@ class PropAnnotationCollection:
             model = prop_annotation.source
             models.add(model)
 
-            if custom_ids == "metadata":
-                if prop_annotation.metadata is None:
-                    prop_annotation.metadata = {}
             # Custom id is found in the metadata field of the annotation with the field name of "custom_id"
-                cids.append(prop_annotation.metadata["custom_id"]) #type: ignore
+            if custom_ids == "metadata":
+                if prop_annotation.metadata is None or "custom_id" not in prop_annotation.metadata:
+                    raise ValueError(
+                        "custom_ids = 'metadata' requires every annotation to carry "
+                        "a 'custom_id' entry in its metadata dict"
+                    )
+                cids.append(prop_annotation.metadata["custom_id"])
 
         if len(models) != 1:
             raise ValueError("Collection of annotations must have the same annotator model")
@@ -450,6 +481,9 @@ class PropAnnotationCollection:
                 cids.append(c_id)   
 
                 # Add to metadata as well
+                if self.annotations[i].metadata is None:
+                    self.annotations[i].metadata = {}
+
                 self.annotations[i].metadata["custom_id"] = c_id #type: ignore
 
         assert len(cids) == len(full_prompts), "custom_ids must have the same number of elements as the number of annotations"
@@ -527,7 +561,7 @@ class PropAnnotationCollection:
 
     def _parse_free_text_llm_output(
         self,
-        regex: re.Pattern | str = r"<FINAL_RANGE>\s*\[\s*([+-]?\d+)\s*,\s*([+-]?\d+)\s*\]\s*</FINAL_RANGE>",
+        regex: re.Pattern | str = FINAL_RANGE_PATTERN,
         verbosity: int = 1
         ) -> Tuple[int, int, int]:
 
@@ -738,24 +772,72 @@ class PropAnnotationCollection:
         self,
         client: AzureOpenAI,
         annotator: Literal["model", "human"] = "model",
-        annotator_temperature: float = 0.0,
+        annotator_temperature: Optional[float] = 0.0,
         max_tokens: Optional[int] = None,
         schema: Union[Literal["free"], Type[BaseModel]] = PropAnnotationSchema,
         lower_bound_field: str = "lower_bound",
-        upper_bound_field: str = "upper_bound"
-    ):
-        
+        upper_bound_field: str = "upper_bound",
+        regex: Optional[re.Pattern | str] = None,
+        skip_annotated: bool = True,
+        max_retries: int = 3,
+        retry_time: float = 5.0,
+        verbosity: int = 1
+    ) -> Tuple[int, int, int]:
+
+        """
+        Annotate every instance in the collection with one LLM call each.
+
+        Unlike `annotate_batch`, requests are sent one at a time, so results are
+        available immediately and partial progress survives a failure. Instances
+        that fail every retry are left unannotated and reported in the summary.
+
+        Returns:
+            tuple[int, int, int]:
+                (successes, errors, total).
+        """
+
+        total = len(self.annotations)
+        success = 0
+        errors = 0
+
         for ann in tqdm(self.annotations, desc = "Annotating sequentially"):
-            try:
-                ann.annotate(
-                    client = client,
-                    annotator = annotator,
-                    annotator_temperature = annotator_temperature,
-                    max_tokens = max_tokens,
-                    schema = schema,
-                    lower_bound_field = lower_bound_field,
-                    upper_bound_field = upper_bound_field
-                )
-            except Exception as ex:
-                logging.warning(f"Failed annotation: {ex}")
+
+            if skip_annotated and ann.is_annotated():
+                success += 1
                 continue
+
+            last_error = None
+            for attempt in range(max_retries):
+                try:
+                    ann.annotate(
+                        client = client,
+                        annotator = annotator,
+                        annotator_temperature = annotator_temperature,
+                        max_tokens = max_tokens,
+                        schema = schema,
+                        lower_bound_field = lower_bound_field,
+                        upper_bound_field = upper_bound_field,
+                        regex = regex,
+                        verbosity = verbosity - 1
+                    )
+                    success += 1
+                    last_error = None
+                    break
+                except Exception as ex:
+                    last_error = ex
+                    if attempt < max_retries - 1:
+                        # Rate limits and transient 5xx are the common case here
+                        time.sleep(retry_time * (attempt + 1))
+
+            if last_error is not None:
+                c_id = (ann.metadata or {}).get("custom_id", "<no custom_id>")
+                logging.warning(f"Failed annotation {c_id}: {last_error}")
+                errors += 1
+
+        if verbosity > 0 and total > 0:
+            print(
+                f"{success}/{total} ({round(success/total*100, 2)}%) successes, "
+                f"{errors}/{total} ({round(errors/total*100, 2)}%) errors"
+            )
+
+        return success, errors, total

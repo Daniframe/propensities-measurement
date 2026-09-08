@@ -10,7 +10,7 @@ from pathlib import Path
 from pydantic import BaseModel
 from dataclasses import dataclass
 
-from openai import AzureOpenAI, NOT_GIVEN
+from openai import AzureOpenAI
 
 class StatusError(Exception):
     pass
@@ -24,6 +24,7 @@ class LLMResponse:
     tokens: Optional[List[str]] = None
 
 _client = None  # simple cache
+_client_key = None  # credentials the cached client was built with
 
 # ---------------------
 # JSON SCHEMA BUILDER
@@ -146,10 +147,7 @@ def get_client(
         >>> client = get_client(api_key="...", endpoint="...")
     """
 
-    global _client
-
-    if _client is not None:
-        return _client
+    global _client, _client_key
 
     if api_key is None:
         api_key = os.getenv("AZURE_OPENAI_API_KEY")
@@ -163,11 +161,19 @@ def get_client(
     if not endpoint:
         raise ValueError("Missing AZURE_OPENAI_ENDPOINT environment variable")
 
+    # The cache is keyed on the credentials, so that asking for a client with
+    # different credentials returns a client that actually uses them.
+    cache_key = (api_key, endpoint, api_version)
+
+    if _client is not None and _client_key == cache_key:
+        return _client
+
     _client = AzureOpenAI(
         azure_endpoint = endpoint,
         api_key = api_key,
         api_version = api_version,
     )
+    _client_key = cache_key
 
     return _client
 
@@ -180,7 +186,7 @@ def llm_single_response(
     client: AzureOpenAI,
     deployment_model: str,
     prompt: str,
-    temperature: float = 0.0,
+    temperature: Optional[float] = 0.0,
     max_tokens: Optional[int] = None,
     return_metadata: bool = False,
     output_structure: Optional[Dict] = None
@@ -204,8 +210,10 @@ def llm_single_response(
         prompt (str):
             The prompt to send to the LLM.
 
-        temperature (float):
+        temperature (float | None):
             Sampling temperature. Defaults to 0.0 for deterministic output.
+            Use None to omit the parameter entirely, which is required for
+            reasoning deployments (o-series, gpt-5.x) that do not accept it.
 
         max_tokens (int | None):
             Maximum number of tokens to generate. If None, defaults to model's limit.
@@ -237,24 +245,36 @@ def llm_single_response(
         >>> print(resp.raw)
     """
 
-    if output_structure is None:
-        response = client.responses.create(
-            model = deployment_model,
-            input = prompt,
-            temperature = temperature,
-            max_output_tokens = max_tokens,
-        )
+    # Only send the optional parameters that were actually requested: reasoning
+    # deployments (o-series, gpt-5.x) reject `temperature`, and sending
+    # `max_output_tokens = None` / `text = None` is rejected by some API versions.
+    kwargs = {
+        "model": deployment_model,
+        "input": prompt,
+    }
 
-    else:
-        response = client.responses.create(
-            model = deployment_model,
-            input = prompt,
-            temperature = temperature,
-            max_output_tokens = max_tokens,
-            text = output_structure #type: ignore
-        )
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+
+    if max_tokens is not None:
+        kwargs["max_output_tokens"] = max_tokens
+
+    if output_structure is not None:
+        kwargs["text"] = output_structure
+
+    response = client.responses.create(**kwargs) #type: ignore
 
     output_text = response.output_text.strip() if hasattr(response, "output_text") else ""
+
+    if not output_text:
+        # Typically a refusal, a content filter, or a reasoning model that spent
+        # its whole `max_output_tokens` budget on reasoning tokens.
+        logging.warning(
+            "Empty output for deployment %s (status = %s, incomplete_details = %s)",
+            deployment_model,
+            getattr(response, "status", None),
+            getattr(response, "incomplete_details", None),
+        )
 
     result = LLMResponse(
         text = output_text,
@@ -275,7 +295,7 @@ def create_batch_requests(
     batch_filename: Optional[Union[str, Path]] = None,
     id_key: str = "id",
     prompt_key: str = "prompt",
-    temperature: float = 0.0,
+    temperature: Optional[float] = 0.0,
     max_tokens: Optional[int] = None,
     output_structure: Optional[Dict] = None,
     encoding: str = "utf-8"
@@ -334,17 +354,27 @@ def create_batch_requests(
 
     requests = []
     for q in prompts:
+        body = {
+            "model": deployment_model,
+            "input": q[prompt_key],
+        }
+
+        # Same rationale as in `llm_single_response`: omit unset parameters
+        # instead of sending explicit nulls.
+        if temperature is not None:
+            body["temperature"] = temperature
+
+        if max_tokens is not None:
+            body["max_output_tokens"] = max_tokens
+
+        if output_structure is not None:
+            body["text"] = output_structure
+
         requests.append({
             "custom_id": q[id_key],
             "method": "POST",
             "url": "/v1/responses",
-            "body": {
-                "model": deployment_model,
-                "input": q[prompt_key],
-                "temperature": temperature,
-                "max_output_tokens": max_tokens,
-                "text": output_structure
-            }
+            "body": body
         })
 
     if batch_filename:
@@ -560,10 +590,13 @@ def retrieve_batch_results(
     errors = len(results['errors'])
 
     if verbosity > 0:
-        print(
-            f"Retrieved results for batch {batch_id}: "
-            f"{success}/{total} ({round(success/total*100)}%) successes, {errors}/{total} ({round(errors/total*100)}%) errors."
-        )
+        if total == 0:
+            print(f"Retrieved results for batch {batch_id}: the batch returned no rows.")
+        else:
+            print(
+                f"Retrieved results for batch {batch_id}: "
+                f"{success}/{total} ({round(success/total*100)}%) successes, {errors}/{total} ({round(errors/total*100)}%) errors."
+            )
 
     # ---- RETURN FORMATS ----
     if return_format == "python":
